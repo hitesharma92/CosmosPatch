@@ -120,13 +120,13 @@ After each run, result columns (`patch_status`, `delete_status`) are written bac
 
 The `Sample-Input-Templates/` folder contains ready-to-use Excel files for each operation. Download any file, fill in your own `id` and `partition_key` values, and pass the path to CosmosPatch.
 
-| File | Operation | Headers | Notes |
-|------|-----------|---------|-------|
-| `op1-patch-property.xlsx` | **Patch Property** | `id`, `partition_key`, `status`, `address/city` | Add your own property columns; supports nested paths like `address/city` |
-| `op2-update-partition-key.xlsx` | **Update Partition Key** | `id`, `partition_key`, `tenantId` | Column C name matches your partition key property |
-| `op3-remove-child-array-item.xlsx` | **Remove Child Array Item** | `id`, `partition_key`, `where:roleId` | Array property name (e.g., `roles`) is entered interactively |
-| `op4-patch-child-array-item.xlsx` | **Patch Child Array Item** | `id`, `partition_key`, `where:employeeId`, `patch:status` | Use `where:` prefix to identify array element, `patch:` prefix for values to set |
-| `op5-update-id.xlsx` | **Update Id** | `id`, `partition_key`, `new_id` | Simple 3-column format for ID migration |
+| File | Operation | Required Columns | Example Property Columns | Notes |
+|------|-----------|---------|-------|-------|
+| `op1-patch-property.xlsx` | **Patch Property** | `id`, `partition_key` | Custom (see file) | Extend with your own property columns; supports nested paths like `address/city` |
+| `op2-update-partition-key.xlsx` | **Update Partition Key** | `id`, `partition_key`, `<new_pk_property>` | — | Column C name matches your partition key property |
+| `op3-remove-child-array-item.xlsx` | **Remove Child Array Item** | `id`, `partition_key`, `where:<field>` | — | Array property name (e.g., `roles`) is entered interactively |
+| `op4-patch-child-array-item.xlsx` | **Patch Child Array Item** | `id`, `partition_key`, `where:<field>`, `patch:<field>` | — | Use `where:` prefix to identify array element, `patch:` prefix for values to set |
+| `op5-update-id.xlsx` | **Update Id** | `id`, `partition_key`, `new_id` | — | Simple 3-column format for ID migration |
 
 **Note:** The utility automatically appends `PatchStatus` and `DeleteStatus` columns to your Excel file after execution, showing the result of each operation.
 
