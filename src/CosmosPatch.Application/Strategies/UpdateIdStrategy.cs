@@ -34,9 +34,6 @@ public sealed class UpdateIdStrategy : PatchStrategyBase
     {
         try
         {
-            List<Task> deleteTasks = new();
-            List<Task> createTasks = new();
-
             foreach (DataRow record in InputRecords.Rows)
             {
                 int excelRow = InputRecords.Rows.IndexOf(record) + 2;
@@ -49,33 +46,27 @@ public sealed class UpdateIdStrategy : PatchStrategyBase
                 try
                 {
                     JObject? document = await Repository.ReadItemAsync(oldId, partitionKey);
-                    if (document is not null)
+                    if (document is null)
                     {
-                        BackupWriter.WriteDocument(document.ToString());
-                        document["id"] = newId;
+                        ExcelStore.WriteCell(excelRow, _deleteStatusCol, $"Document not found: {oldId}");
+                        ProgressBar.Tick();
+                        continue;
+                    }
 
-                        deleteTasks.Add(Repository.DeleteItemAsync(oldId, partitionKey)
-                            .ContinueWith(deleteTask =>
-                            {
-                                if (deleteTask.Result)
-                                {
-                                    createTasks.Add(Repository.AddItemAsync(document, partitionKey)
-                                        .ContinueWith(_ =>
-                                        {
-                                            Logger.WriteMessage($"Updated id: {oldId} → {newId}");
-                                            ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Success, ColumnConstants.Success });
-                                        }));
-                                }
-                                else
-                                {
-                                    Logger.WriteMessage($"Delete failed for id: {oldId}");
-                                    ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Error, ColumnConstants.Error });
-                                }
-                            }));
+                    BackupWriter.WriteDocument(document.ToString());
+                    document["id"] = newId;
+
+                    bool deleted = await Repository.DeleteItemAsync(oldId, partitionKey);
+                    if (deleted)
+                    {
+                        await Repository.AddItemAsync(document, partitionKey);
+                        Logger.WriteMessage($"Updated id: {oldId} → {newId}");
+                        ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Success, ColumnConstants.Success });
                     }
                     else
                     {
-                        ExcelStore.WriteCell(excelRow, _deleteStatusCol, $"Document not found: {oldId}");
+                        Logger.WriteMessage($"Delete failed for id: {oldId}");
+                        ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Error, ColumnConstants.Error });
                     }
                 }
                 catch (Exception ex) when (IsCosmosException(ex))
@@ -87,10 +78,6 @@ public sealed class UpdateIdStrategy : PatchStrategyBase
                 if (excelRow % 50 == 0) ExcelStore.Save();
                 ProgressBar.Tick();
             }
-
-            await Task.WhenAll(deleteTasks);
-            await Task.WhenAll(createTasks);
-            ExcelStore.Save();
         }
         finally
         {
@@ -115,6 +102,4 @@ public sealed class UpdateIdStrategy : PatchStrategyBase
                 $"The 3rd Excel column must be named '{ColumnConstants.NewId}' but found '{thirdCol}'.");
     }
 
-    private static bool IsCosmosException(Exception ex)
-        => ex.GetType().Name.Contains("CosmosException", StringComparison.OrdinalIgnoreCase);
 }

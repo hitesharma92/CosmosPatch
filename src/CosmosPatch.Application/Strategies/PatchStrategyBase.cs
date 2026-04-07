@@ -21,6 +21,9 @@ public abstract class PatchStrategyBase : IPatchStrategy
     protected readonly IEnumerable<string> InputHeaders;
     protected readonly DataTable InputRecords;
 
+    protected static bool IsCosmosException(Exception ex)
+        => ex.GetType().Name.Contains("CosmosException", StringComparison.OrdinalIgnoreCase);
+
     protected PatchStrategyBase(
         IDataRepository<JObject> repository,
         IExcelDataStore excelStore,

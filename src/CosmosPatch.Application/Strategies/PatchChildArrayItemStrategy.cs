@@ -154,6 +154,5 @@ public sealed class PatchChildArrayItemStrategy : PatchStrategyBase
         return input.Trim();
     }
 
-    private static bool IsCosmosException(Exception ex)
-        => ex.GetType().Name.Contains("CosmosException", StringComparison.OrdinalIgnoreCase);
+
 }

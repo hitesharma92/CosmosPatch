@@ -12,7 +12,6 @@ namespace CosmosPatch.Application.Strategies;
 /// </summary>
 public sealed class UpdatePartitionKeyStrategy : PatchStrategyBase
 {
-    private readonly string _partitionKeyProperty;
     private readonly int _deleteStatusCol = 4;
     private readonly int _patchStatusCol = 5;
 
@@ -24,11 +23,7 @@ public sealed class UpdatePartitionKeyStrategy : PatchStrategyBase
         IAppLogger logger)
         : base(repository, excelStore, backupWriter, progressBar, logger)
     {
-        ContainerInfo containerInfo = Repository.ReadContainerInfoAsync().GetAwaiter().GetResult();
-        _partitionKeyProperty = containerInfo.PartitionKeyPath;
-
         ValidateColumnCount();
-        ValidateThirdColumnMatchesPartitionKey();
 
         ExcelStore.WriteCell(1, _deleteStatusCol, ColumnConstants.DeleteStatus);
         ExcelStore.WriteCell(1, _patchStatusCol, ColumnConstants.PatchStatus);
@@ -36,50 +31,50 @@ public sealed class UpdatePartitionKeyStrategy : PatchStrategyBase
 
     public override async Task PatchAsync()
     {
+        // Resolve partition key property name asynchronously (avoids blocking call in constructor)
+        ContainerInfo containerInfo = await Repository.ReadContainerInfoAsync();
+        string partitionKeyProperty = containerInfo.PartitionKeyPath;
+
+        string? thirdCol = InputHeaders.Skip(2).FirstOrDefault();
+        if (thirdCol != partitionKeyProperty)
+            throw new ArgumentException(
+                $"The 3rd Excel column '{thirdCol}' does not match the container's partition key property '{partitionKeyProperty}'.");
+
         try
         {
-            List<Task> deleteTasks = new();
-            List<Task> createTasks = new();
-
             foreach (DataRow record in InputRecords.Rows)
             {
                 int excelRow = InputRecords.Rows.IndexOf(record) + 2;
                 string oldId = Convert.ToString(record[ColumnConstants.Id])!;
                 string oldPartitionValue = Convert.ToString(record[ColumnConstants.PartitionKey])!;
-                string newPartitionValue = Convert.ToString(record[_partitionKeyProperty])!;
+                string newPartitionValue = Convert.ToString(record[partitionKeyProperty])!;
 
                 Logger.WriteMessage($"Processing id: {oldId}, old partition: {oldPartitionValue} → new: {newPartitionValue}");
 
                 try
                 {
                     JObject? document = await Repository.ReadItemAsync(oldId, oldPartitionValue);
-                    if (document is not null)
+                    if (document is null)
                     {
-                        BackupWriter.WriteDocument(document.ToString());
-                        document[_partitionKeyProperty] = newPartitionValue;
+                        ExcelStore.WriteCell(excelRow, _deleteStatusCol, $"Document not found: {oldId}");
+                        ProgressBar.Tick();
+                        continue;
+                    }
 
-                        deleteTasks.Add(Repository.DeleteItemAsync(oldId, oldPartitionValue)
-                            .ContinueWith(deleteTask =>
-                            {
-                                if (deleteTask.Result)
-                                {
-                                    createTasks.Add(Repository.AddItemAsync(document, newPartitionValue)
-                                        .ContinueWith(_ =>
-                                        {
-                                            Logger.WriteMessage($"Updated partition: {oldPartitionValue} → {newPartitionValue} for id: {oldId}");
-                                            ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Success, ColumnConstants.Success });
-                                        }));
-                                }
-                                else
-                                {
-                                    Logger.WriteMessage($"Delete failed for id: {oldId}");
-                                    ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Error, ColumnConstants.Error });
-                                }
-                            }));
+                    BackupWriter.WriteDocument(document.ToString());
+                    document[partitionKeyProperty] = newPartitionValue;
+
+                    bool deleted = await Repository.DeleteItemAsync(oldId, oldPartitionValue);
+                    if (deleted)
+                    {
+                        await Repository.AddItemAsync(document, newPartitionValue);
+                        Logger.WriteMessage($"Updated partition: {oldPartitionValue} → {newPartitionValue} for id: {oldId}");
+                        ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Success, ColumnConstants.Success });
                     }
                     else
                     {
-                        ExcelStore.WriteCell(excelRow, _deleteStatusCol, $"Document not found: {oldId}");
+                        Logger.WriteMessage($"Delete failed for id: {oldId}");
+                        ExcelStore.WriteCells(excelRow, _deleteStatusCol, new[] { ColumnConstants.Error, ColumnConstants.Error });
                     }
                 }
                 catch (Exception ex) when (IsCosmosException(ex))
@@ -91,10 +86,6 @@ public sealed class UpdatePartitionKeyStrategy : PatchStrategyBase
                 if (excelRow % 50 == 0) ExcelStore.Save();
                 ProgressBar.Tick();
             }
-
-            await Task.WhenAll(deleteTasks);
-            await Task.WhenAll(createTasks);
-            ExcelStore.Save();
         }
         finally
         {
@@ -110,15 +101,4 @@ public sealed class UpdatePartitionKeyStrategy : PatchStrategyBase
             throw new ArgumentException(
                 "Input Excel must have exactly 3 columns: id, partition_key, and the new partition key column.");
     }
-
-    private void ValidateThirdColumnMatchesPartitionKey()
-    {
-        string? thirdCol = InputHeaders.Skip(2).FirstOrDefault();
-        if (thirdCol != _partitionKeyProperty)
-            throw new ArgumentException(
-                $"The 3rd Excel column '{thirdCol}' does not match the container's partition key property '{_partitionKeyProperty}'.");
-    }
-
-    private static bool IsCosmosException(Exception ex)
-        => ex.GetType().Name.Contains("CosmosException", StringComparison.OrdinalIgnoreCase);
 }

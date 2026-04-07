@@ -139,6 +139,4 @@ public sealed class RemoveChildArrayItemStrategy : PatchStrategyBase
         return !string.IsNullOrWhiteSpace(input) && input.Equals("y", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsCosmosException(Exception ex)
-        => ex.GetType().Name.Contains("CosmosException", StringComparison.OrdinalIgnoreCase);
 }

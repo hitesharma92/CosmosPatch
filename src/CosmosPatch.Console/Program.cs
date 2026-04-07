@@ -29,9 +29,20 @@ internal static class Program
             OperationType operationType = OperationMenu.SelectOperation();
 
             // ── Initialize logger ──
-            string env = EnvironmentDetector.Detect(endpointUrl).ToString();
+            CosmosPatch.Domain.Enums.AppEnvironment detectedEnv = EnvironmentDetector.Detect(endpointUrl);
+            string env = detectedEnv.ToString();
             string appName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name ?? "CosmosPatch";
             logger.CreateLog($"{env} - {appName}", append: true, showBeginHeader: true);
+
+            // ── PROD safety gate ──
+            if (detectedEnv == CosmosPatch.Domain.Enums.AppEnvironment.PROD)
+            {
+                logger.WriteMessageOnConsole($"\n⚠️  WARNING: The endpoint URL indicates a PRODUCTION environment.");
+                logger.WriteMessageOnConsole("This operation will mutate live data. Type CONFIRM to proceed, or press Enter to exit:");
+                string? confirmation = System.Console.ReadLine();
+                if (!string.Equals(confirmation?.Trim(), "CONFIRM", StringComparison.Ordinal))
+                    throw new OperationCanceledException("User did not confirm PRODUCTION operation. Exiting safely.");
+            }
 
             // ── Initialize Cosmos client ──
             logger.WriteMessageOnConsole("\nConnecting to Cosmos DB...");
