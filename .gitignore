@@ -56,3 +56,6 @@ Logs - */
 *.env
 appsettings.local.json
 secrets.json
+
+# Internal development / session notes
+CONTINUATION_PROMPT.md
